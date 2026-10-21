@@ -1,0 +1,2 @@
+[functions.shared-vault]
+verify_jwt = false

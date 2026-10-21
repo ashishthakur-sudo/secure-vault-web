@@ -17,6 +17,22 @@ To test it locally, run `flutter run -d chrome` or serve the `build\web` folder 
 
 Serve the app only over HTTPS or localhost: secure browser storage requires a secure context. A static host can serve the frontend, but does not receive or store vault files.
 
+## Shared folder (cloud)
+
+The **Shared** folder button in the vault opens a cloud folder that different users can access with the same four-digit password. Unlike the private local vault, shared files are uploaded to a Supabase Storage bucket so other users can list and download them. Cloud files are not end-to-end encrypted; the project owner/Supabase administrators can access them. Do not use it for sensitive files. A four-digit password is weak; the Edge Function limits incorrect attempts to five per IP per 15-minute window, but this is not equivalent to strong account authentication.
+
+To enable Shared, create a Supabase project, install the Supabase CLI, then from this repository run:
+
+```powershell
+supabase login
+supabase link --project-ref YOUR_PROJECT_REF
+supabase db push
+supabase functions deploy shared-vault --no-verify-jwt
+supabase secrets set SHARED_FOLDER_PIN=1234
+```
+
+Replace `1234` with your chosen four-digit password. Supabase supplies the project URL and service-role secret to the Edge Function; never put a service-role key in this app or publish it. In Secure Vault, each user opens **Shared → Configure shared folder** and enters the same Supabase project URL and its public anon/publishable key from **Project Settings → API**. The public key is intended for client use; the service-role secret is not. Rebuild and deploy the web app after code changes using the existing GitHub Pages deployment process. Shared uploads are currently limited to 4 MB each. Native app downloads are saved under `Documents\SecureVaultShared`; browser downloads use the browser's download location.
+
 ## Use the app on a Windows laptop
 
 The Android APK does not run on Windows. Build the Windows desktop app instead:

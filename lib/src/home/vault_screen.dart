@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/vault_entry.dart';
+import '../shared/shared_folder_screen.dart';
 import '../services/vault_service.dart';
 import '../viewer/preview_screen.dart';
 
@@ -79,6 +80,17 @@ class _VaultScreenState extends State<VaultScreen> {
       appBar: AppBar(
         title: const Text('Secure Vault'),
         actions: [
+          TextButton.icon(
+            onPressed: _busy || widget.decoyMode
+                ? null
+                : () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const SharedFolderScreen(),
+                    ),
+                  ),
+            icon: const Icon(Icons.folder_shared_outlined),
+            label: const Text('Shared'),
+          ),
           if (!widget.decoyMode)
             IconButton(
               tooltip: 'Import files',
