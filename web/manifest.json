@@ -1,0 +1,35 @@
+{
+    "name": "Secure Vault",
+    "short_name": "Secure Vault",
+    "start_url": ".",
+    "display": "standalone",
+    "background_color": "#101e35",
+    "theme_color": "#101e35",
+    "description": "Encrypted personal file vault. Files are encrypted in your browser and stored locally.",
+    "orientation": "portrait-primary",
+    "prefer_related_applications": false,
+    "icons": [
+        {
+            "src": "icons/Icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png"
+        },
+        {
+            "src": "icons/Icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png"
+        },
+        {
+            "src": "icons/Icon-maskable-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "maskable"
+        },
+        {
+            "src": "icons/Icon-maskable-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "maskable"
+        }
+    ]
+}
