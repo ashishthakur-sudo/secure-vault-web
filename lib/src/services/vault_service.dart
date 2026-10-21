@@ -11,6 +11,8 @@ import '../models/vault_entry.dart';
 import 'vault_store.dart';
 
 class VaultService extends ChangeNotifier {
+  VaultService({VaultStore? store}) : _store = store ?? createVaultStore();
+
   static const categories = <String, List<String>>{
     'Images': ['jpg', 'jpeg', 'png', 'webp'],
     'PDFs': ['pdf'],
@@ -20,7 +22,7 @@ class VaultService extends ChangeNotifier {
   static const _formatMagic = [83, 86, 76, 84, 1];
   static const _iterations = 210000;
 
-  final VaultStore _store = createVaultStore();
+  final VaultStore _store;
   Uint8List? _encryptionKey;
   Uint8List? _macKey;
   List<VaultEntry> _entries = [];
@@ -154,11 +156,14 @@ class VaultService extends ChangeNotifier {
       await _store.clearLegacyIndex();
       rows = await _store.readEntries();
     }
-    return rows
-        .map((row) => VaultEntry.fromJson(
-              jsonDecode(utf8.decode(row.payload)) as Map<String, dynamic>,
-            ))
-        .toList();
+    return Future.wait(
+      rows.map((row) async {
+        final metadata = await _decrypt(row.payload);
+        return VaultEntry.fromJson(
+          jsonDecode(utf8.decode(metadata)) as Map<String, dynamic>,
+        );
+      }),
+    );
   }
 
   Future<List<int>> _encrypt(List<int> plaintext) async {
