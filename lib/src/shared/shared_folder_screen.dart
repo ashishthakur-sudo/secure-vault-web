@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../models/vault_entry.dart';
+import '../viewer/docx_text_extractor.dart';
 import '../viewer/preview_screen.dart';
 import 'shared_file_download.dart';
 import 'shared_folder_service.dart';
@@ -221,6 +222,15 @@ class _SharedFolderScreenState extends State<SharedFolderScreen> {
 
       final bytes = await _service.downloadFile(_pinController.text, file.id);
       if (!mounted) return;
+      if (category == 'DOCX') {
+        final text = extractDocxText(bytes);
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => _SharedDocxPreview(name: file.name, text: text),
+          ),
+        );
+        return;
+      }
       if (file.previewCategory == 'Text') {
         final text = utf8.decode(bytes, allowMalformed: true);
         await Navigator.of(context).push(
@@ -841,6 +851,39 @@ class _SharedUnsupportedPreview extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _SharedDocxPreview extends StatelessWidget {
+  const _SharedDocxPreview({required this.name, required this.text});
+
+  final String name;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(name)),
+      body: Column(
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            child: const Text(
+              'Text-only preview. Word formatting, images, and some layout '
+              'details may not be preserved.',
+            ),
+          ),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: SelectableText(text),
+            ),
+          ),
+        ],
       ),
     );
   }

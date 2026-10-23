@@ -5,6 +5,7 @@ void main() {
   test('shared files identify in-app preview formats by extension', () {
     expect(_sharedFile('photo.PNG').previewCategory, 'Images');
     expect(_sharedFile('report.pdf').previewCategory, 'PDFs');
+    expect(_sharedFile('report.docx').previewCategory, 'DOCX');
     expect(_sharedFile('clip.mp4').previewCategory, 'Videos');
     expect(_sharedFile('song.wav').previewCategory, 'Audios');
     expect(_sharedFile('notes.md').previewCategory, 'Text');

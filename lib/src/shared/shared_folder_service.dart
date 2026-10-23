@@ -36,6 +36,7 @@ class SharedFile {
       return 'Images';
     }
     if (extension == 'pdf') return 'PDFs';
+    if (extension == 'docx') return 'DOCX';
     if (const {'mp4', 'mkv'}.contains(extension)) return 'Videos';
     if (const {'mp3', 'wav'}.contains(extension)) return 'Audios';
     if (const {'txt', 'md', 'csv', 'json', 'xml', 'log'}.contains(extension)) {
