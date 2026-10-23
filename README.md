@@ -33,6 +33,8 @@ supabase secrets set SHARED_FOLDER_PIN=1234
 
 Replace `1234` with your chosen four-digit password. Supabase supplies the project URL and service-role secret to the Edge Function; never put a service-role key in this app or publish it. In Secure Vault, each user opens **Shared → Configure shared folder** and enters the same Supabase project URL and its public anon/publishable key from **Project Settings → API**. The public key is intended for client use; the service-role secret is not. Rebuild and deploy the web app after code changes using the existing GitHub Pages deployment process. Shared uploads are currently limited to 4 MB each. Native app downloads are saved under `Documents\SecureVaultShared`; browser downloads use the browser's download location.
 
+If **Open Shared** reports **“Failed to fetch”**, the browser could not reach the Edge Function; the PIN has not yet been checked. Entering the URL and public key only configures the app—it does not create the database, set the server PIN, or deploy the function. From the project folder, complete `supabase login`, `supabase link --project-ref YOUR_PROJECT_REF`, `supabase db push`, set `SHARED_FOLDER_PIN`, and run `supabase functions deploy shared-vault --no-verify-jwt`. Then verify that the configured URL is the same project you linked and retry. Never share or enter the service-role key in the app.
+
 ## Use the app on a Windows laptop
 
 The Android APK does not run on Windows. Build the Windows desktop app instead:

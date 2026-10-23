@@ -39,6 +39,9 @@ class SharedFolderService {
   final FlutterSecureStorage _storage;
   final http.Client _client;
 
+  Future<String?> get projectUrl => _storage.read(key: _urlKey);
+  Future<String?> get publishableKey => _storage.read(key: _anonKey);
+
   Future<bool> get isConfigured async =>
       (await _storage.read(key: _urlKey)) != null &&
       (await _storage.read(key: _anonKey)) != null;
@@ -104,16 +107,46 @@ class SharedFolderService {
         'Shared folder is not configured with a Supabase project.',
       );
     }
-    final response = await _client.post(
-      Uri.parse('$projectUrl/functions/v1/shared-vault'),
-      headers: {
-        'content-type': 'application/json',
-        'apikey': anonKey,
-        'authorization': 'Bearer $anonKey',
-      },
-      body: jsonEncode(body),
-    );
-    final decoded = jsonDecode(response.body);
+    late final http.Response response;
+    try {
+      response = await _client.post(
+        Uri.parse('$projectUrl/functions/v1/shared-vault'),
+        headers: {
+          'content-type': 'application/json',
+          'apikey': anonKey,
+          'authorization': 'Bearer $anonKey',
+        },
+        body: jsonEncode(body),
+      );
+    } on http.ClientException {
+      throw StateError(
+        'Could not reach the Supabase shared-vault function. Saving the URL '
+        'and public key does not deploy the function. Check the project URL, '
+        'then deploy the shared-vault Edge Function from this project and '
+        'confirm its CORS settings. See the Shared folder setup in README.md.',
+      );
+    }
+    if (response.statusCode == 404) {
+      throw StateError(
+        'Supabase could not find the shared-vault function. Deploy it with '
+        '`supabase functions deploy shared-vault --no-verify-jwt`.',
+      );
+    }
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      throw StateError(
+        'Supabase rejected this request. Check that the public key belongs '
+        'to this project and deploy the function with JWT verification disabled.',
+      );
+    }
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(response.body);
+    } on FormatException {
+      throw FormatException(
+        'Supabase returned an invalid response (HTTP ${response.statusCode}). '
+        'Check that the shared-vault Edge Function is deployed.',
+      );
+    }
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException(
         'The shared folder returned an invalid response.',

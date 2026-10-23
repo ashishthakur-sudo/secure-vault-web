@@ -39,7 +39,16 @@ class _SharedFolderScreenState extends State<SharedFolderScreen> {
 
   Future<void> _loadConfiguration() async {
     final configured = await _service.isConfigured;
-    if (mounted) setState(() => _configured = configured);
+    if (!configured) return;
+    final projectUrl = await _service.projectUrl;
+    final publishableKey = await _service.publishableKey;
+    if (mounted) {
+      setState(() {
+        _configured = true;
+        _urlController.text = projectUrl ?? '';
+        _anonKeyController.text = publishableKey ?? '';
+      });
+    }
   }
 
   Future<void> _configure() async {
@@ -142,12 +151,11 @@ class _SharedFolderScreenState extends State<SharedFolderScreen> {
               onPressed: _busy ? null : _upload,
               icon: const Icon(Icons.upload_file),
             ),
-          if (!_configured)
-            IconButton(
-              tooltip: 'Configure cloud sharing',
-              onPressed: _showConfiguration,
-              icon: const Icon(Icons.settings_outlined),
-            ),
+          IconButton(
+            tooltip: 'Configure cloud sharing',
+            onPressed: _busy ? null : _showConfiguration,
+            icon: const Icon(Icons.settings_outlined),
+          ),
         ],
       ),
       body: _busy
@@ -171,7 +179,7 @@ class _SharedFolderScreenState extends State<SharedFolderScreen> {
             const Icon(Icons.cloud_off_outlined, size: 48),
             const SizedBox(height: 12),
             const Text(
-              'Cloud sharing needs a Supabase project. Configure the project URL and public anon key to continue.',
+              'Cloud sharing requires a deployed Supabase shared-vault Edge Function. Enter your project URL and public key here after the backend has been deployed.',
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
@@ -181,7 +189,7 @@ class _SharedFolderScreenState extends State<SharedFolderScreen> {
             ),
             const SizedBox(height: 12),
             const Text(
-              'Do not enter a service-role key here. A 4-digit password is weak; access must be rate-limited by the server.',
+              'Entering these values alone does not create or deploy the backend. Follow the Shared folder setup in the project README. Never enter a service-role key here.',
               textAlign: TextAlign.center,
             ),
           ],
@@ -210,7 +218,13 @@ class _SharedFolderScreenState extends State<SharedFolderScreen> {
               decoration: const InputDecoration(labelText: '4-digit password'),
               onSubmitted: (_) => _unlock(),
             ),
-            if (_error != null) Text(_error!),
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                _error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ],
             FilledButton(onPressed: _unlock, child: const Text('Open Shared')),
           ],
         ),
@@ -256,6 +270,10 @@ class _SharedFolderScreenState extends State<SharedFolderScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              const Text(
+                'The shared-vault Edge Function must already be deployed to this Supabase project. Saving a URL and public key alone is not enough.',
+              ),
+              const SizedBox(height: 12),
               TextFormField(
                 controller: _urlController,
                 decoration: const InputDecoration(
