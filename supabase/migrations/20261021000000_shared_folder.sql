@@ -11,13 +11,21 @@ alter table public.shared_files enable row level security;
 
 revoke all on public.shared_files from anon, authenticated;
 
+create table if not exists public.shared_folder_settings (
+  id integer primary key check (id = 1),
+  pin_salt text not null,
+  pin_hash text not null,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.shared_folder_settings enable row level security;
+revoke all on public.shared_folder_settings from anon, authenticated;
+
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('shared-vault', 'shared-vault', false, 4194304, array['application/octet-stream'])
 on conflict (id) do update
 set public = false, file_size_limit = 4194304,
     allowed_mime_types = array['application/octet-stream'];
-
-alter table storage.objects enable row level security;
 
 create table if not exists public.shared_pin_attempts (
   ip_hash text primary key,

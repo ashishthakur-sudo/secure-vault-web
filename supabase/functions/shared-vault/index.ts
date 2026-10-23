@@ -7,6 +7,7 @@ const corsHeaders = {
 };
 const maxFileSize = 4 * 1024 * 1024;
 const bucket = "shared-vault";
+const settingsId = 1;
 
 const json = (status: number, body: Record<string, unknown>) =>
   new Response(JSON.stringify(body), {
@@ -14,16 +15,37 @@ const json = (status: number, body: Record<string, unknown>) =>
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 
+const sha256 = async (value: string) =>
+  Array.from(
+    new Uint8Array(
+      await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)),
+    ),
+    (byte) => byte.toString(16).padStart(2, "0"),
+  ).join("");
+
+const constantTimeEqual = async (left: string, right: string) => {
+  const leftHash = new Uint8Array(
+    await crypto.subtle.digest("SHA-256", new TextEncoder().encode(left)),
+  );
+  const rightHash = new Uint8Array(
+    await crypto.subtle.digest("SHA-256", new TextEncoder().encode(right)),
+  );
+  let difference = 0;
+  for (let index = 0; index < leftHash.length; index++) {
+    difference |= leftHash[index] ^ rightHash[index];
+  }
+  return difference === 0;
+};
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
   if (request.method !== "POST") return json(405, { error: "Method not allowed." });
 
-  const configuredPin = Deno.env.get("SHARED_FOLDER_PIN");
   const projectUrl = Deno.env.get("SUPABASE_URL");
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!configuredPin || !/^\d{4}$/.test(configuredPin) || !projectUrl || !serviceKey) {
+  if (!projectUrl || !serviceKey) {
     return json(503, { error: "Shared folder has not been configured by its owner." });
   }
 
@@ -33,8 +55,8 @@ Deno.serve(async (request) => {
   } catch {
     return json(400, { error: "Invalid request." });
   }
-  const pin = typeof body.pin === "string" ? body.pin : "";
   const action = body.action;
+  const pin = typeof body.pin === "string" ? body.pin : "";
   const clientIp = request.headers.get("cf-connecting-ip") ??
     request.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "unknown";
   const ipBytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(clientIp));
@@ -45,7 +67,69 @@ Deno.serve(async (request) => {
     auth: { persistSession: false },
   });
 
-  if (!/^\d{4}$/.test(pin) || pin !== configuredPin) {
+  const adminResetKey = Deno.env.get("SHARED_FOLDER_ADMIN_KEY");
+  if (action === "admin-verify" || action === "admin-set-pin") {
+    if (!adminResetKey) {
+      return json(503, { error: "Admin password reset has not been configured." });
+    }
+    const suppliedKey = typeof body.adminKey === "string" ? body.adminKey : "";
+    if (!await constantTimeEqual(suppliedKey, adminResetKey)) {
+      const { data: allowed, error } = await admin.rpc("record_shared_pin_failure", {
+        p_ip_hash: ipHash,
+      });
+      if (error) {
+        console.error("Unable to apply admin reset rate limit.", error.message);
+        return json(500, { error: "Unable to verify admin access." });
+      }
+      return json(allowed ? 401 : 429, {
+        error: allowed
+          ? "The admin reset key is incorrect."
+          : "Too many failed attempts. Try again in 15 minutes.",
+      });
+    }
+    if (action === "admin-verify") {
+      return json(200, { authorized: true });
+    }
+    const newPin = typeof body.newPin === "string" ? body.newPin : "";
+    if (!/^\d{4}$/.test(newPin)) {
+      return json(400, { error: "The new shared-folder password must be 4 digits." });
+    }
+    const pinSalt = crypto.randomUUID();
+    const pinHash = await sha256(`${pinSalt}:${newPin}`);
+    const { error } = await admin.from("shared_folder_settings").upsert({
+      id: settingsId,
+      pin_salt: pinSalt,
+      pin_hash: pinHash,
+    });
+    if (error) {
+      console.error("Unable to reset shared-folder password.", error.message);
+      return json(500, { error: "Unable to reset the shared-folder password." });
+    }
+    return json(200, { updated: true });
+  }
+
+  const { data: pinSettings, error: settingsError } = await admin
+    .from("shared_folder_settings")
+    .select("pin_salt,pin_hash")
+    .eq("id", settingsId)
+    .maybeSingle();
+  if (settingsError) {
+    console.error("Unable to read shared-folder settings.", settingsError.message);
+    return json(500, { error: "Unable to read shared-folder settings." });
+  }
+  const configuredPin = Deno.env.get("SHARED_FOLDER_PIN");
+  if (!pinSettings && (!configuredPin || !/^\d{4}$/.test(configuredPin))) {
+    return json(503, {
+      error: "The shared-folder password has not been set by an admin.",
+    });
+  }
+  const pinConfigured = pinSettings
+    ? await constantTimeEqual(
+      await sha256(`${pinSettings.pin_salt}:${pin}`),
+      pinSettings.pin_hash,
+    )
+    : Boolean(configuredPin && /^\d{4}$/.test(configuredPin) && pin === configuredPin);
+  if (!/^\d{4}$/.test(pin) || !pinConfigured) {
     const { data: allowed, error } = await admin.rpc("record_shared_pin_failure", {
       p_ip_hash: ipHash,
     });

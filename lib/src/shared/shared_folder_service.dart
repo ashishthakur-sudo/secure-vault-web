@@ -126,6 +126,23 @@ class SharedFolderService {
     return base64Decode(content);
   }
 
+  Future<void> verifyAdminResetKey(String adminKey) async {
+    await _request({'action': 'admin-verify', 'adminKey': adminKey});
+  }
+
+  Future<void> resetSharedPin(String adminKey, String newPin) async {
+    if (!RegExp(r'^\d{4}$').hasMatch(newPin)) {
+      throw const FormatException(
+        'Enter a new 4-digit shared-folder password.',
+      );
+    }
+    await _request({
+      'action': 'admin-set-pin',
+      'adminKey': adminKey,
+      'newPin': newPin,
+    });
+  }
+
   Future<Map<String, dynamic>> _request(Map<String, Object> body) async {
     final projectUrl = await _storage.read(key: _urlKey);
     final anonKey = await _storage.read(key: _anonKey);
@@ -147,10 +164,10 @@ class SharedFolderService {
       );
     } on http.ClientException {
       throw StateError(
-        'Could not reach the Supabase shared-vault function. Saving the URL '
-        'and public key does not deploy the function. Check the project URL, '
-        'then deploy the shared-vault Edge Function from this project and '
-        'confirm its CORS settings. See the Shared folder setup in README.md.',
+        'Could not reach the Supabase shared-vault function. The function may '
+        'not be deployed, or the project URL may be incorrect. Apply the '
+        'database migration and deploy the function to the same project. '
+        'See the Shared folder setup in README.md.',
       );
     }
     if (response.statusCode == 404) {

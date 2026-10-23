@@ -16,6 +16,7 @@ class _SharedFolderScreenState extends State<SharedFolderScreen> {
   final _pinController = TextEditingController();
   final _urlController = TextEditingController();
   final _anonKeyController = TextEditingController();
+  String? _adminResetKey;
   List<SharedFile> _files = [];
   bool _configured = false;
   bool _unlocked = false;
@@ -34,6 +35,7 @@ class _SharedFolderScreenState extends State<SharedFolderScreen> {
     _pinController.dispose();
     _urlController.dispose();
     _anonKeyController.dispose();
+    _adminResetKey = null;
     super.dispose();
   }
 
@@ -126,7 +128,13 @@ class _SharedFolderScreenState extends State<SharedFolderScreen> {
     try {
       await action();
     } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
+      if (mounted) {
+        setState(
+          () => _error = error is StateError
+              ? error.message.toString()
+              : error.toString(),
+        );
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -148,6 +156,21 @@ class _SharedFolderScreenState extends State<SharedFolderScreen> {
               }),
               icon: const Icon(Icons.lock_outline),
             ),
+          IconButton(
+            tooltip: _adminResetKey == null
+                ? 'Admin sign in'
+                : 'Reset shared-folder password',
+            onPressed: _busy
+                ? null
+                : _adminResetKey == null
+                ? _showAdminSignIn
+                : _showAdminPinReset,
+            icon: Icon(
+              _adminResetKey == null
+                  ? Icons.admin_panel_settings_outlined
+                  : Icons.password_outlined,
+            ),
+          ),
           IconButton(
             tooltip: 'Configure cloud sharing',
             onPressed: _busy ? null : _showConfiguration,
@@ -229,12 +252,134 @@ class _SharedFolderScreenState extends State<SharedFolderScreen> {
                 style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
             ],
-            FilledButton(onPressed: _unlock, child: const Text('Open Shared')),
+            FilledButton(
+              onPressed: _busy ? null : _unlock,
+              child: const Text('Open Shared'),
+            ),
           ],
         ),
       ),
     ),
   );
+
+  Future<void> _showAdminSignIn() async {
+    final controller = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    final adminKey = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Admin sign in'),
+        content: Form(
+          key: formKey,
+          child: TextFormField(
+            controller: controller,
+            obscureText: true,
+            autofocus: true,
+            decoration: const InputDecoration(labelText: 'Admin reset key'),
+            validator: (value) => value == null || value.isEmpty
+                ? 'Enter the admin reset key.'
+                : null,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (!formKey.currentState!.validate()) return;
+              Navigator.pop(dialogContext, controller.text);
+            },
+            child: const Text('Verify'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (adminKey == null || !mounted) return;
+    await _run(() async {
+      await _service.verifyAdminResetKey(adminKey);
+      if (mounted) setState(() => _adminResetKey = adminKey);
+    });
+  }
+
+  Future<void> _showAdminPinReset() async {
+    final pinController = TextEditingController();
+    final confirmationController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    final adminKey = _adminResetKey;
+    if (adminKey == null) return;
+
+    final newPin = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Reset shared-folder password'),
+        content: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: pinController,
+                keyboardType: TextInputType.number,
+                maxLength: 4,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: 'New 4-digit password',
+                ),
+                validator: (value) =>
+                    value == null || !RegExp(r'^\d{4}$').hasMatch(value)
+                    ? 'Enter exactly 4 digits.'
+                    : null,
+              ),
+              TextFormField(
+                controller: confirmationController,
+                keyboardType: TextInputType.number,
+                maxLength: 4,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: 'Confirm new password',
+                ),
+                validator: (value) => value != pinController.text
+                    ? 'Passwords do not match.'
+                    : null,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (!formKey.currentState!.validate()) return;
+              Navigator.pop(dialogContext, pinController.text);
+            },
+            child: const Text('Reset password'),
+          ),
+        ],
+      ),
+    );
+    pinController.dispose();
+    confirmationController.dispose();
+    if (newPin == null || !mounted) return;
+    await _run(() async {
+      await _service.resetSharedPin(adminKey, newPin);
+      _pinController.text = newPin;
+      if (_unlocked) {
+        final files = await _service.listFiles(newPin);
+        if (mounted) setState(() => _files = files);
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Shared-folder password was reset.')),
+        );
+      }
+    });
+  }
 
   Widget _fileList() {
     if (_files.isEmpty) {

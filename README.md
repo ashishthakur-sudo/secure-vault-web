@@ -27,13 +27,15 @@ To enable Shared, create a Supabase project, install the Supabase CLI, then from
 supabase login
 supabase link --project-ref YOUR_PROJECT_REF
 supabase db push
+supabase secrets set SHARED_FOLDER_ADMIN_KEY=YOUR_LONG_RANDOM_ADMIN_KEY
 supabase functions deploy shared-vault --no-verify-jwt
-supabase secrets set SHARED_FOLDER_PIN=1234
 ```
 
-Replace `1234` with your chosen four-digit password. Supabase supplies the project URL and service-role secret to the Edge Function; never put a service-role key in this app or publish it. The currently published app is preconfigured with its Supabase project URL and public publishable key; users can inspect or change them under **Shared → Configure cloud sharing**. The public key is intended for client use; the service-role secret is not. In **Shared**, select files (including images and videos) with **Add files**; each file can be up to 4 MB. Use the **Download** button beside any shared file. Native app downloads are saved under `Documents\SecureVaultShared`; browser downloads use the browser's download location.
+Set `SHARED_FOLDER_ADMIN_KEY` to a long, random secret and keep it private; it authorizes changing the shared-folder password. No initial `SHARED_FOLDER_PIN` secret is required: after deployment, use **Admin sign in** in the app with this key and set the initial four-digit password. The reset control is then available to admins for future changes. The key is kept only in memory for that app session. Passwords set in the app are stored as salted hashes in the database. A legacy `SHARED_FOLDER_PIN` secret, if configured, is used only until an admin sets a password in the app.
 
-If **Open Shared** reports **“Failed to fetch”**, the browser could not reach the Edge Function; the PIN has not yet been checked. Entering the URL and public key only configures the app—it does not create the database, set the server PIN, or deploy the function. From the project folder, complete `supabase login`, `supabase link --project-ref YOUR_PROJECT_REF`, `supabase db push`, set `SHARED_FOLDER_PIN`, and run `supabase functions deploy shared-vault --no-verify-jwt`. Then verify that the configured URL is the same project you linked and retry. Never share or enter the service-role key in the app.
+Supabase supplies the project URL and service-role secret to the Edge Function; never put a service-role key in this app or publish it. The currently published app is preconfigured with its Supabase project URL and public publishable key; users can inspect or change them under **Shared → Configure cloud sharing**. The public key is intended for client use; the service-role secret is not. In **Shared**, select files (including images and videos) with **Add files**; each file can be up to 4 MB. Use the **Download** button beside any shared file. Native app downloads are saved under `Documents\SecureVaultShared`; browser downloads use the browser's download location.
+
+If **Open Shared** reports **“Failed to fetch”**, the browser could not reach the Edge Function; the PIN has not yet been checked. Check that the function is deployed to the same project configured in the app, the database migration has been applied, and `SHARED_FOLDER_ADMIN_KEY` has been set. Never share or enter the service-role key in the app.
 
 ## Use the app on a Windows laptop
 
