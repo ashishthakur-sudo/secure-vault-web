@@ -10,6 +10,7 @@ Build the browser version with:
 
 ```powershell
 flutter pub get
+dart run pdfx:install_web
 flutter build web --release
 ```
 

@@ -78,7 +78,29 @@ class _PreviewScreenState extends State<PreviewScreen> {
                   ),
                 )
               : _isPdf
-                  ? PdfView(controller: _pdfController!)
+                  ? PdfView(
+                      controller: _pdfController!,
+                      builders: PdfViewBuilders<DefaultBuilderOptions>(
+                        options: const DefaultBuilderOptions(),
+                        documentLoaderBuilder: (_) => const Center(
+                          child: CircularProgressIndicator(),
+                        ),
+                        pageLoaderBuilder: (_) => const Center(
+                          child: CircularProgressIndicator(),
+                        ),
+                        errorBuilder: (context, error) => Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Text(
+                              'Could not display this PDF. Check your '
+                              'connection and try again, or download the file.\n\n'
+                              '$error',
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ),
+                      ),
+                    )
                   : _isVideo
                       ? _videoController == null
                           ? const Center(child: CircularProgressIndicator())
