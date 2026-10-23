@@ -1,6 +1,10 @@
+import 'dart:convert';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
+import '../models/vault_entry.dart';
+import '../viewer/preview_screen.dart';
 import 'shared_file_download.dart';
 import 'shared_folder_service.dart';
 
@@ -117,6 +121,39 @@ class _SharedFolderScreenState extends State<SharedFolderScreen> {
           SnackBar(content: Text('Downloaded ${file.name} to $location')),
         );
       }
+    });
+  }
+
+  Future<void> _view(SharedFile file) async {
+    await _run(() async {
+      final bytes = await _service.downloadFile(_pinController.text, file.id);
+      if (!mounted) return;
+
+      if (file.previewCategory == 'Text') {
+        final text = utf8.decode(bytes, allowMalformed: true);
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => _SharedTextPreview(name: file.name, text: text),
+          ),
+        );
+        return;
+      }
+
+      final category = file.previewCategory;
+      if (category == null) return;
+      final entry = VaultEntry(
+        id: file.id,
+        name: file.name,
+        category: category,
+        extension: file.extension,
+        createdAt: file.createdAt,
+        size: file.size,
+      );
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => PreviewScreen(entry: entry, bytes: bytes),
+        ),
+      );
     });
   }
 
@@ -441,10 +478,21 @@ class _SharedFolderScreenState extends State<SharedFolderScreen> {
                 subtitle: Text(
                   '${_formatBytes(file.size)} • ${file.createdAt.toLocal()}',
                 ),
-                trailing: TextButton.icon(
-                  onPressed: _busy ? null : () => _download(file),
-                  icon: const Icon(Icons.download_outlined),
-                  label: const Text('Download'),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (file.previewCategory != null)
+                      IconButton(
+                        tooltip: 'View ${file.name}',
+                        onPressed: _busy ? null : () => _view(file),
+                        icon: const Icon(Icons.visibility_outlined),
+                      ),
+                    TextButton.icon(
+                      onPressed: _busy ? null : () => _download(file),
+                      icon: const Icon(Icons.download_outlined),
+                      label: const Text('Download'),
+                    ),
+                  ],
                 ),
               );
             },
@@ -531,5 +579,44 @@ class _SharedFolderScreenState extends State<SharedFolderScreen> {
     if (bytes < 1024) return '$bytes B';
     if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
     return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+}
+
+class _SharedTextPreview extends StatelessWidget {
+  const _SharedTextPreview({required this.name, required this.text});
+
+  static const _maxCharacters = 200000;
+
+  final String name;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final truncated = text.length > _maxCharacters;
+    return Scaffold(
+      appBar: AppBar(title: Text(name)),
+      body: Column(
+        children: [
+          if (truncated)
+            Container(
+              width: double.infinity,
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              padding: const EdgeInsets.all(12),
+              child: const Text(
+                'Preview limited to the first 200,000 characters.',
+              ),
+            ),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: SelectableText(
+                truncated ? text.substring(0, _maxCharacters) : text,
+                style: const TextStyle(fontFamily: 'monospace'),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

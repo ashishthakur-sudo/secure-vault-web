@@ -19,6 +19,31 @@ class SharedFile {
   final int size;
   final DateTime createdAt;
 
+  String get extension {
+    final separator = name.lastIndexOf('.');
+    return separator < 0 ? '' : name.substring(separator + 1).toLowerCase();
+  }
+
+  String? get previewCategory {
+    if (const {
+      'jpg',
+      'jpeg',
+      'png',
+      'gif',
+      'webp',
+      'bmp',
+    }.contains(extension)) {
+      return 'Images';
+    }
+    if (extension == 'pdf') return 'PDFs';
+    if (const {'mp4', 'mkv'}.contains(extension)) return 'Videos';
+    if (const {'mp3', 'wav'}.contains(extension)) return 'Audios';
+    if (const {'txt', 'md', 'csv', 'json', 'xml', 'log'}.contains(extension)) {
+      return 'Text';
+    }
+    return null;
+  }
+
   factory SharedFile.fromJson(Map<String, dynamic> json) => SharedFile(
     id: json['id'] as String,
     name: json['name'] as String,
