@@ -92,14 +92,17 @@ class _SharedFolderScreenState extends State<SharedFolderScreen> {
   }
 
   Future<void> _upload() async {
-    final files = await FilePicker.pickFiles();
+    final files = await FilePicker.pickFiles(
+      dialogTitle: 'Add files, images, or videos to Shared',
+    );
     if (files.isEmpty) return;
-    final file = files.first;
-    final bytes = await file.readAsBytes();
     await _run(() async {
-      await _service.uploadFile(_pinController.text, file.name, bytes);
-      final files = await _service.listFiles(_pinController.text);
-      if (mounted) setState(() => _files = files);
+      for (final file in files) {
+        final bytes = await file.readAsBytes();
+        await _service.uploadFile(_pinController.text, file.name, bytes);
+        final uploadedFiles = await _service.listFiles(_pinController.text);
+        if (mounted) setState(() => _files = uploadedFiles);
+      }
     });
   }
 
@@ -145,12 +148,6 @@ class _SharedFolderScreenState extends State<SharedFolderScreen> {
               }),
               icon: const Icon(Icons.lock_outline),
             ),
-          if (_unlocked)
-            IconButton(
-              tooltip: 'Upload file',
-              onPressed: _busy ? null : _upload,
-              icon: const Icon(Icons.upload_file),
-            ),
           IconButton(
             tooltip: 'Configure cloud sharing',
             onPressed: _busy ? null : _showConfiguration,
@@ -165,6 +162,13 @@ class _SharedFolderScreenState extends State<SharedFolderScreen> {
           : !_unlocked
           ? _pinForm()
           : _fileList(),
+      floatingActionButton: _unlocked
+          ? FloatingActionButton.extended(
+              onPressed: _busy ? null : _upload,
+              icon: const Icon(Icons.add),
+              label: const Text('Add files'),
+            )
+          : null,
     );
   }
 
@@ -233,30 +237,97 @@ class _SharedFolderScreenState extends State<SharedFolderScreen> {
   );
 
   Widget _fileList() {
-    if (_error != null) return Center(child: Text(_error!));
     if (_files.isEmpty) {
-      return const Center(
-        child: Text('No files in Shared yet. Upload a file to share it.'),
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.folder_shared_outlined, size: 48),
+              const SizedBox(height: 12),
+              const Text(
+                'Add files, images, or videos to share them. Each upload can be up to 4 MB.',
+                textAlign: TextAlign.center,
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  _error!,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ],
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: _busy ? null : _upload,
+                icon: const Icon(Icons.upload_file),
+                label: const Text('Add files'),
+              ),
+            ],
+          ),
+        ),
       );
     }
-    return ListView.builder(
-      itemCount: _files.length,
-      itemBuilder: (context, index) {
-        final file = _files[index];
-        return ListTile(
-          leading: const Icon(Icons.insert_drive_file_outlined),
-          title: Text(file.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-          subtitle: Text(
-            '${_formatBytes(file.size)} • ${file.createdAt.toLocal()}',
+    return Column(
+      children: [
+        if (_error != null)
+          MaterialBanner(
+            content: Text(_error!),
+            actions: [
+              TextButton(
+                onPressed: () => setState(() => _error = null),
+                child: const Text('Dismiss'),
+              ),
+            ],
           ),
-          trailing: IconButton(
-            tooltip: 'Download ${file.name}',
-            onPressed: () => _download(file),
-            icon: const Icon(Icons.download_outlined),
+        Expanded(
+          child: ListView.builder(
+            itemCount: _files.length,
+            itemBuilder: (context, index) {
+              final file = _files[index];
+              return ListTile(
+                leading: Icon(_iconForFile(file.name)),
+                title: Text(
+                  file.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: Text(
+                  '${_formatBytes(file.size)} • ${file.createdAt.toLocal()}',
+                ),
+                trailing: TextButton.icon(
+                  onPressed: _busy ? null : () => _download(file),
+                  icon: const Icon(Icons.download_outlined),
+                  label: const Text('Download'),
+                ),
+              );
+            },
           ),
-        );
-      },
+        ),
+      ],
     );
+  }
+
+  IconData _iconForFile(String name) {
+    final extension = name.split('.').last.toLowerCase();
+    if (const {
+      'jpg',
+      'jpeg',
+      'png',
+      'gif',
+      'webp',
+      'bmp',
+    }.contains(extension)) {
+      return Icons.image_outlined;
+    }
+    if (const {'mp4', 'mkv', 'mov', 'avi', 'webm'}.contains(extension)) {
+      return Icons.video_file_outlined;
+    }
+    if (const {'mp3', 'wav', 'm4a', 'aac', 'ogg'}.contains(extension)) {
+      return Icons.audio_file_outlined;
+    }
+    return Icons.insert_drive_file_outlined;
   }
 
   Future<void> _showConfiguration() async {
