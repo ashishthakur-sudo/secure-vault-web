@@ -22,8 +22,10 @@ class _SharedFolderScreenState extends State<SharedFolderScreen> {
   final _anonKeyController = TextEditingController();
   String? _adminResetKey;
   List<SharedFile> _files = [];
+  List<SharedFile> _trashFiles = [];
   bool _configured = false;
   bool _unlocked = false;
+  bool _trashOpen = false;
   bool _busy = false;
   String? _error;
 
@@ -87,11 +89,16 @@ class _SharedFolderScreenState extends State<SharedFolderScreen> {
       return;
     }
     await _run(() async {
-      final files = await _service.listFiles(pin);
+      final results = await Future.wait([
+        _service.listFiles(pin),
+        _service.listTrashFiles(pin),
+      ]);
       if (mounted) {
         setState(() {
-          _files = files;
+          _files = results[0];
+          _trashFiles = results[1];
           _unlocked = true;
+          _trashOpen = false;
         });
       }
     });
@@ -112,6 +119,80 @@ class _SharedFolderScreenState extends State<SharedFolderScreen> {
     });
   }
 
+  Future<void> _openTrash() async {
+    await _run(() async {
+      final files = await _service.listTrashFiles(_pinController.text);
+      if (mounted) {
+        setState(() {
+          _trashFiles = files;
+          _trashOpen = true;
+        });
+      }
+    });
+  }
+
+  Future<void> _showSharedFiles() async {
+    setState(() => _trashOpen = false);
+  }
+
+  Future<void> _moveToTrash(SharedFile file) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Move file to Trash?'),
+        content: Text(
+          '"${file.name}" will be removed from Shared. You can restore it from Trash.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Move to Trash'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await _run(() async {
+      await _service.moveToTrash(_pinController.text, file.id);
+      final results = await Future.wait([
+        _service.listFiles(_pinController.text),
+        _service.listTrashFiles(_pinController.text),
+      ]);
+      if (mounted) {
+        setState(() {
+          _files = results[0];
+          _trashFiles = results[1];
+        });
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('File moved to Trash.')));
+      }
+    });
+  }
+
+  Future<void> _restoreFromTrash(SharedFile file) async {
+    await _run(() async {
+      await _service.restoreFromTrash(_pinController.text, file.id);
+      final results = await Future.wait([
+        _service.listFiles(_pinController.text),
+        _service.listTrashFiles(_pinController.text),
+      ]);
+      if (mounted) {
+        setState(() {
+          _files = results[0];
+          _trashFiles = results[1];
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('File restored to Shared.')),
+        );
+      }
+    });
+  }
+
   Future<void> _download(SharedFile file) async {
     await _run(() async {
       final bytes = await _service.downloadFile(_pinController.text, file.id);
@@ -126,9 +207,20 @@ class _SharedFolderScreenState extends State<SharedFolderScreen> {
 
   Future<void> _view(SharedFile file) async {
     await _run(() async {
-      final bytes = await _service.downloadFile(_pinController.text, file.id);
       if (!mounted) return;
 
+      final category = file.previewCategory;
+      if (category == null) {
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => _SharedUnsupportedPreview(file: file),
+          ),
+        );
+        return;
+      }
+
+      final bytes = await _service.downloadFile(_pinController.text, file.id);
+      if (!mounted) return;
       if (file.previewCategory == 'Text') {
         final text = utf8.decode(bytes, allowMalformed: true);
         await Navigator.of(context).push(
@@ -139,8 +231,6 @@ class _SharedFolderScreenState extends State<SharedFolderScreen> {
         return;
       }
 
-      final category = file.previewCategory;
-      if (category == null) return;
       final entry = VaultEntry(
         id: file.id,
         name: file.name,
@@ -189,9 +279,27 @@ class _SharedFolderScreenState extends State<SharedFolderScreen> {
               onPressed: () => setState(() {
                 _unlocked = false;
                 _files = [];
+                _trashFiles = [];
+                _trashOpen = false;
                 _pinController.clear();
               }),
               icon: const Icon(Icons.lock_outline),
+            ),
+          if (_unlocked)
+            IconButton(
+              tooltip: _trashOpen ? 'Back to shared files' : 'Open Trash',
+              onPressed: _busy
+                  ? null
+                  : _trashOpen
+                  ? _showSharedFiles
+                  : _openTrash,
+              icon: _trashOpen
+                  ? const Icon(Icons.folder_shared_outlined)
+                  : Badge(
+                      isLabelVisible: _trashFiles.isNotEmpty,
+                      label: Text('${_trashFiles.length}'),
+                      child: const Icon(Icons.delete_outline),
+                    ),
             ),
           IconButton(
             tooltip: _adminResetKey == null
@@ -221,8 +329,10 @@ class _SharedFolderScreenState extends State<SharedFolderScreen> {
           ? _configurationPrompt()
           : !_unlocked
           ? _pinForm()
+          : _trashOpen
+          ? _trashList()
           : _fileList(),
-      floatingActionButton: _unlocked
+      floatingActionButton: _unlocked && !_trashOpen
           ? FloatingActionButton.extended(
               onPressed: _busy ? null : _upload,
               icon: const Icon(Icons.add),
@@ -481,16 +591,99 @@ class _SharedFolderScreenState extends State<SharedFolderScreen> {
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (file.previewCategory != null)
-                      IconButton(
-                        tooltip: 'View ${file.name}',
-                        onPressed: _busy ? null : () => _view(file),
-                        icon: const Icon(Icons.visibility_outlined),
-                      ),
-                    TextButton.icon(
+                    IconButton(
+                      tooltip: 'View ${file.name}',
+                      onPressed: _busy ? null : () => _view(file),
+                      icon: const Icon(Icons.visibility_outlined),
+                    ),
+                    IconButton(
+                      tooltip: 'Download ${file.name}',
                       onPressed: _busy ? null : () => _download(file),
                       icon: const Icon(Icons.download_outlined),
-                      label: const Text('Download'),
+                    ),
+                    IconButton(
+                      tooltip: 'Move ${file.name} to Trash',
+                      onPressed: _busy ? null : () => _moveToTrash(file),
+                      icon: const Icon(Icons.delete_outline),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _trashList() {
+    if (_trashFiles.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.delete_outline, size: 48),
+              const SizedBox(height: 12),
+              const Text('Trash is empty.'),
+              const SizedBox(height: 8),
+              const Text(
+                'Files moved here can be restored to the Shared folder.',
+                textAlign: TextAlign.center,
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  _error!,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ],
+            ],
+          ),
+        ),
+      );
+    }
+    return Column(
+      children: [
+        if (_error != null)
+          MaterialBanner(
+            content: Text(_error!),
+            actions: [
+              TextButton(
+                onPressed: () => setState(() => _error = null),
+                child: const Text('Dismiss'),
+              ),
+            ],
+          ),
+        Expanded(
+          child: ListView.builder(
+            itemCount: _trashFiles.length,
+            itemBuilder: (context, index) {
+              final file = _trashFiles[index];
+              return ListTile(
+                leading: Icon(_iconForFile(file.name)),
+                title: Text(
+                  file.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: Text(
+                  '${_formatBytes(file.size)} • ${file.createdAt.toLocal()}',
+                ),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      tooltip: 'View ${file.name}',
+                      onPressed: _busy ? null : () => _view(file),
+                      icon: const Icon(Icons.visibility_outlined),
+                    ),
+                    IconButton(
+                      tooltip: 'Restore ${file.name}',
+                      onPressed: _busy ? null : () => _restoreFromTrash(file),
+                      icon: const Icon(Icons.restore_outlined),
                     ),
                   ],
                 ),
@@ -616,6 +809,38 @@ class _SharedTextPreview extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _SharedUnsupportedPreview extends StatelessWidget {
+  const _SharedUnsupportedPreview({required this.file});
+
+  final SharedFile file;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(file.name)),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.insert_drive_file_outlined, size: 64),
+              const SizedBox(height: 16),
+              Text(file.name, textAlign: TextAlign.center),
+              const SizedBox(height: 8),
+              Text(
+                'Preview is not supported for .${file.extension} files. '
+                'Use Download to open this file in a compatible app.',
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

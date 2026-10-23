@@ -146,12 +146,17 @@ Deno.serve(async (request) => {
   await admin.rpc("clear_shared_pin_failures", { p_ip_hash: ipHash });
 
   try {
-    if (action === "list") {
-      const { data, error } = await admin
+    if (action === "list" || action === "list-trash") {
+      let query = admin
         .from("shared_files")
         .select("id,name,content_type,size,created_at")
-        .order("created_at", { ascending: false })
-        .limit(500);
+        .order(action === "list" ? "created_at" : "deleted_at", {
+          ascending: false,
+        });
+      query = action === "list"
+        ? query.is("deleted_at", null)
+        : query.not("deleted_at", "is", null);
+      const { data, error } = await query.limit(500);
       if (error) throw error;
       return json(200, {
         files: data.map((file) => ({
@@ -162,6 +167,34 @@ Deno.serve(async (request) => {
           createdAt: file.created_at,
         })),
       });
+    }
+
+    if (action === "trash" || action === "restore") {
+      const id = typeof body.id === "string" ? body.id : "";
+      if (!/^[0-9a-f-]{36}$/i.test(id)) {
+        return json(400, { error: "Invalid file ID." });
+      }
+      const update = action === "trash"
+        ? admin
+          .from("shared_files")
+          .update({ deleted_at: new Date().toISOString() })
+          .eq("id", id)
+          .is("deleted_at", null)
+        : admin
+          .from("shared_files")
+          .update({ deleted_at: null })
+          .eq("id", id)
+          .not("deleted_at", "is", null);
+      const { data, error } = await update.select("id").maybeSingle();
+      if (error) throw error;
+      if (!data) {
+        return json(404, {
+          error: action === "trash"
+            ? "Shared file not found."
+            : "File was not found in the shared-folder trash.",
+        });
+      }
+      return json(200, { id, restored: action === "restore" });
     }
 
     if (action === "upload") {

@@ -114,7 +114,18 @@ class SharedFolderService {
   }
 
   Future<List<SharedFile>> listFiles(String pin) async {
-    final response = await _request({'action': 'list', 'pin': pin});
+    return _listFiles(pin, action: 'list');
+  }
+
+  Future<List<SharedFile>> listTrashFiles(String pin) async {
+    return _listFiles(pin, action: 'list-trash');
+  }
+
+  Future<List<SharedFile>> _listFiles(
+    String pin, {
+    required String action,
+  }) async {
+    final response = await _request({'action': action, 'pin': pin});
     final files = response['files'];
     if (files is! List) {
       throw const FormatException(
@@ -124,6 +135,14 @@ class SharedFolderService {
     return files
         .map((item) => SharedFile.fromJson(item as Map<String, dynamic>))
         .toList();
+  }
+
+  Future<void> moveToTrash(String pin, String id) async {
+    await _request({'action': 'trash', 'pin': pin, 'id': id});
+  }
+
+  Future<void> restoreFromTrash(String pin, String id) async {
+    await _request({'action': 'restore', 'pin': pin, 'id': id});
   }
 
   Future<void> uploadFile(String pin, String name, Uint8List bytes) async {
