@@ -39,9 +39,9 @@ class _SharedFolderScreenState extends State<SharedFolderScreen> {
 
   Future<void> _loadConfiguration() async {
     final configured = await _service.isConfigured;
-    if (!configured) return;
     final projectUrl = await _service.projectUrl;
     final publishableKey = await _service.publishableKey;
+    if (!configured) return;
     if (mounted) {
       setState(() {
         _configured = true;

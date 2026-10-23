@@ -35,6 +35,12 @@ class SharedFolderService {
 
   static const _urlKey = 'secure_vault.shared.supabase_url';
   static const _anonKey = 'secure_vault.shared.supabase_anon_key';
+  static const _configurationVersionKey =
+      'secure_vault.shared.configuration_version';
+  static const _configurationVersion = '1';
+  static const defaultProjectUrl = 'https://uxepshadypusifhvvwsf.supabase.co';
+  static const defaultPublishableKey =
+      'sb_publishable_JWNuaBqV-K2gq191GHDj1g_p_BMU3QI';
 
   final FlutterSecureStorage _storage;
   final http.Client _client;
@@ -42,9 +48,30 @@ class SharedFolderService {
   Future<String?> get projectUrl => _storage.read(key: _urlKey);
   Future<String?> get publishableKey => _storage.read(key: _anonKey);
 
-  Future<bool> get isConfigured async =>
-      (await _storage.read(key: _urlKey)) != null &&
-      (await _storage.read(key: _anonKey)) != null;
+  Future<void> configureDefaults() async {
+    if (await _storage.read(key: _configurationVersionKey) !=
+        _configurationVersion) {
+      await _storage.write(key: _urlKey, value: defaultProjectUrl);
+      await _storage.write(key: _anonKey, value: defaultPublishableKey);
+      await _storage.write(
+        key: _configurationVersionKey,
+        value: _configurationVersion,
+      );
+      return;
+    }
+    if (await _storage.read(key: _urlKey) == null) {
+      await _storage.write(key: _urlKey, value: defaultProjectUrl);
+    }
+    if (await _storage.read(key: _anonKey) == null) {
+      await _storage.write(key: _anonKey, value: defaultPublishableKey);
+    }
+  }
+
+  Future<bool> get isConfigured async {
+    await configureDefaults();
+    return await _storage.read(key: _urlKey) != null &&
+        await _storage.read(key: _anonKey) != null;
+  }
 
   Future<void> configure(String projectUrl, String anonKey) async {
     final uri = Uri.tryParse(projectUrl.trim());
