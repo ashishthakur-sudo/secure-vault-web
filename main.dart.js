@@ -32525,8 +32525,7 @@ _.e=b
 _.f=c
 _.r=d
 _.w=e
-_.x=!0
-_.Q=_.z=_.y=!1
+_.Q=_.z=_.y=_.x=!1
 _.as=!0
 _.c=_.a=_.ax=_.at=null},
 aM1:function aM1(a){this.a=a},
@@ -118649,30 +118648,32 @@ K(a){var s,r,q,p,o,n,m=this,l=null
 if(m.y)s="Sign in"
 else s=m.z?"Verify code":"Send WhatsApp code"
 r=A.be("Secure Vault account",l,l,l,A.X(a).ok.f,B.ap,l,l)
-q=t.p
-r=A.a([B.rB,B.aS,r,B.df,A.be(m.y?"Use email sign-in only for an existing account. New accounts use phone verification.":"A one-time code will be sent to your WhatsApp number. Your encrypted files stay on this device.",l,l,l,l,B.ap,l,l),B.o0],q)
-if(m.y){p=A.lh(B.Pw,!1,m.r,B.MH,l,l,B.oc,l,!1,l,new A.aMb())
+if(m.y)q="Use email sign-in only for an existing account. New accounts use phone verification."
+else q=m.x?"Create an account with your mobile number. A one-time code will be sent to WhatsApp.":"Sign in with your mobile number using a one-time WhatsApp code."
+p=t.p
+q=A.a([B.rB,B.aS,r,B.df,A.be(q,l,l,l,l,B.ap,l,l),B.o0],p)
+if(m.y){r=A.lh(B.Pw,!1,m.r,B.MH,l,l,B.oc,l,!1,l,new A.aMb())
 o=m.as
 n=o?"Show password":"Hide password"
-B.b.N(r,A.a([p,B.aS,A.lh(B.Qc,!1,m.w,A.apc(l,l,l,l,l,l,l,l,!0,l,l,l,l,l,l,l,l,l,l,l,l,l,l,l,l,l,l,l,l,l,l,l,l,l,l,l,l,l,l,l,"Account password",!0,!0,!1,l,l,l,l,l,l,l,l,A.d7(l,l,A.hP(o?B.mz:B.rt,l,l,l),l,l,new A.aMc(m),l,l,n),l,l,l,l,l),l,l,l,l,o,new A.aMd(m),new A.aMe())],q))}else{p=t.VS
-o=A.a([new A.zr(A.bC("[+0-9]",!0,!1),!0,"")],p)
-o=A.a([A.lh(B.Qm,!1,m.e,B.MG,!m.z,o,B.cj,16,!1,new A.aMf(m),new A.aMg())],q)
-if(m.z)B.b.N(o,A.a([B.aS,A.lh(B.Q9,!1,m.f,B.ML,l,A.a([$.bhy()],p),B.ci,8,!1,new A.aMh(m),new A.aMi())],q))
-B.b.N(r,o)}p=m.at
-if(p!=null)B.b.N(r,A.a([B.aS,A.be(p,l,l,l,l,l,l,l)],q))
-p=m.ax
-if(p!=null)B.b.N(r,A.a([B.aS,A.be(p,l,l,l,A.fJ(l,l,A.X(a).ax.fy,l,l,l,l,l,l,l,l,l,l,l,l,l,l,!0,l,l,l,l,l,l,l,l),l,l,l)],q))
-r.push(B.jP)
-q=m.Q
-p=q?l:m.gaos()
-r.push(A.m2(q?B.DY:A.be(s,l,l,l,l,l,l,l),p))
-if(!m.y&&m.z)r.push(A.i_(B.a6e,m.Q?l:new A.aMj(m),l))
-if(!m.y)r.push(A.i_(B.a67,m.Q||!m.z?l:m.gaBt(),l))
-if(!m.y){q=m.Q||m.z?l:new A.aMk(m)
-r.push(A.i_(A.be(m.x?"Already have a phone account? Sign in":"New here? Create an account",l,l,l,l,l,l,l),q,l))}if(m.Q)q=l
-else q=m.y?m.gaDS():new A.aMl(m)
-r.push(A.i_(A.be(m.y?"Back to phone sign-in":"Existing email account? Email sign-in",l,l,l,l,l,l,l),q,l))
-return A.os(l,A.JN(!0,A.aDM(A.cR(new A.eA(B.kX,A.b7u(new A.bH(B.lK,A.Vd(A.d4(r,B.dz,B.A,B.a4),m.d),l),B.c8),l),l,l),l,B.aF),B.ai,!0),l)}}
+B.b.N(q,A.a([r,B.aS,A.lh(B.Qc,!1,m.w,A.apc(l,l,l,l,l,l,l,l,!0,l,l,l,l,l,l,l,l,l,l,l,l,l,l,l,l,l,l,l,l,l,l,l,l,l,l,l,l,l,l,l,"Account password",!0,!0,!1,l,l,l,l,l,l,l,l,A.d7(l,l,A.hP(o?B.mz:B.rt,l,l,l),l,l,new A.aMc(m),l,l,n),l,l,l,l,l),l,l,l,l,o,new A.aMd(m),new A.aMe())],p))}else{r=t.VS
+o=A.a([new A.zr(A.bC("[+0-9]",!0,!1),!0,"")],r)
+o=A.a([A.lh(B.Qm,!1,m.e,B.MG,!m.z,o,B.cj,16,!1,new A.aMf(m),new A.aMg())],p)
+if(m.z)B.b.N(o,A.a([B.aS,A.lh(B.Q9,!1,m.f,B.ML,l,A.a([$.bhy()],r),B.ci,8,!1,new A.aMh(m),new A.aMi())],p))
+B.b.N(q,o)}r=m.at
+if(r!=null)B.b.N(q,A.a([B.aS,A.be(r,l,l,l,l,l,l,l)],p))
+r=m.ax
+if(r!=null)B.b.N(q,A.a([B.aS,A.be(r,l,l,l,A.fJ(l,l,A.X(a).ax.fy,l,l,l,l,l,l,l,l,l,l,l,l,l,l,!0,l,l,l,l,l,l,l,l),l,l,l)],p))
+q.push(B.jP)
+r=m.Q
+p=r?l:m.gaos()
+q.push(A.m2(r?B.DY:A.be(s,l,l,l,l,l,l,l),p))
+if(!m.y&&m.z)q.push(A.i_(B.a6e,m.Q?l:new A.aMj(m),l))
+if(!m.y)q.push(A.i_(B.a67,m.Q||!m.z?l:m.gaBt(),l))
+if(!m.y){r=m.Q||m.z?l:new A.aMk(m)
+q.push(A.i_(A.be(m.x?"Already have a phone account? Sign in":"Create new account using mobile number",l,l,l,l,l,l,l),r,l))}if(m.Q)r=l
+else r=m.y?m.gaDS():new A.aMl(m)
+q.push(A.i_(A.be(m.y?"Back to phone sign-in":"Existing email account? Email sign-in",l,l,l,l,l,l,l),r,l))
+return A.os(l,A.JN(!0,A.aDM(A.cR(new A.eA(B.kX,A.b7u(new A.bH(B.lK,A.Vd(A.d4(q,B.dz,B.A,B.a4),m.d),l),B.c8),l),l,l),l,B.aF),B.ai,!0),l)}}
 A.aM1.prototype={
 $0(){var s=this.a
 s.Q=!0
