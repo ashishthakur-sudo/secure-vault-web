@@ -5,9 +5,16 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-client-info",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
-const maxFileSize = 4 * 1024 * 1024;
+const maxFileSize = 20 * 1024 * 1024;
 const bucket = "shared-vault";
 const settingsId = 1;
+const mimeTypes: Record<string, string> = {
+  pdf: "application/pdf",
+  png: "image/png",
+  jpg: "image/jpeg",
+  mp4: "video/mp4",
+  mp3: "audio/mpeg",
+};
 
 const json = (status: number, body: Record<string, unknown>) =>
   new Response(JSON.stringify(body), {
@@ -200,22 +207,55 @@ Deno.serve(async (request) => {
     if (action === "upload") {
       const name = typeof body.name === "string" ? body.name.trim() : "";
       const content = typeof body.contentBase64 === "string" ? body.contentBase64 : "";
-      if (!name || name.length > 255 || name.includes("/") || name.includes("\\")) {
+      if (
+        !name || name.length > 255 || name.includes("/") || name.includes("\\") ||
+        /[\u0000-\u001f\u007f]/.test(name)
+      ) {
         return json(400, { error: "Invalid file name." });
       }
+      const extension = name.split(".").pop()?.toLowerCase() ?? "";
+      const contentType = mimeTypes[extension];
+      if (!contentType) {
+        return json(400, {
+          error: "Only PDF, PNG, JPG, MP4, and MP3 files are allowed.",
+        });
+      }
       if (content.length > Math.ceil(maxFileSize * 4 / 3) + 8) {
-        return json(413, { error: "Shared uploads are limited to 4 MB." });
+        return json(413, { error: "Shared uploads are limited to 20 MB." });
+      }
+      if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(content)) {
+        return json(400, { error: "Invalid file data." });
       }
       const bytes = Uint8Array.from(atob(content), (character) => character.charCodeAt(0));
       if (bytes.length > maxFileSize) {
-        return json(413, { error: "Shared uploads are limited to 4 MB." });
+        return json(413, { error: "Shared uploads are limited to 20 MB." });
+      }
+      const hasPrefix = (prefix: number[]) =>
+        bytes.length >= prefix.length &&
+        prefix.every((byte, index) => bytes[index] === byte);
+      const validSignature = extension === "pdf"
+        ? hasPrefix([0x25, 0x50, 0x44, 0x46, 0x2d])
+        : extension === "png"
+        ? hasPrefix([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+        : extension === "jpg"
+        ? hasPrefix([0xff, 0xd8, 0xff])
+        : extension === "mp4"
+        ? bytes.length >= 12 &&
+          bytes[4] === 0x66 && bytes[5] === 0x74 &&
+          bytes[6] === 0x79 && bytes[7] === 0x70
+        : hasPrefix([0x49, 0x44, 0x33]) ||
+          (bytes.length >= 2 && bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0);
+      if (!validSignature) {
+        return json(400, {
+          error: "The file contents do not match the selected file type.",
+        });
       }
       const id = crypto.randomUUID();
       const path = `${id}`;
       const { error: uploadError } = await admin.storage.from(bucket).upload(
         path,
         bytes,
-        { contentType: "application/octet-stream", upsert: false },
+        { contentType, upsert: false },
       );
       if (uploadError) throw uploadError;
       const { error: insertError } = await admin.from("shared_files").insert({
@@ -223,7 +263,7 @@ Deno.serve(async (request) => {
         name,
         storage_path: path,
         size: bytes.length,
-        content_type: "application/octet-stream",
+        content_type: contentType,
       });
       if (insertError) {
         await admin.storage.from(bucket).remove([path]);

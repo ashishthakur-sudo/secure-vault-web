@@ -9,10 +9,16 @@ import '../models/vault_entry.dart';
 import 'memory_media_server.dart';
 
 class PreviewScreen extends StatefulWidget {
-  const PreviewScreen({required this.entry, required this.bytes, super.key});
+  const PreviewScreen({
+    required this.entry,
+    required this.bytes,
+    this.onDownload,
+    super.key,
+  });
 
   final VaultEntry entry;
   final Uint8List bytes;
+  final VoidCallback? onDownload;
 
   @override
   State<PreviewScreen> createState() => _PreviewScreenState();
@@ -68,49 +74,62 @@ class _PreviewScreenState extends State<PreviewScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(widget.entry.name)),
+      appBar: AppBar(
+        title: Text(widget.entry.name),
+        actions: [
+          if (widget.onDownload != null)
+            IconButton(
+              tooltip: 'Download file',
+              onPressed: widget.onDownload,
+              icon: const Icon(Icons.download_outlined),
+            ),
+        ],
+      ),
       body: _error != null
-          ? Center(child: Padding(padding: const EdgeInsets.all(24), child: Text(_error!)))
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(_error!),
+              ),
+            )
           : _isImage
-              ? Center(
-                  child: InteractiveViewer(
-                    child: Image.memory(widget.bytes, fit: BoxFit.contain),
+          ? Center(
+              child: InteractiveViewer(
+                child: Image.memory(widget.bytes, fit: BoxFit.contain),
+              ),
+            )
+          : _isPdf
+          ? PdfView(
+              controller: _pdfController!,
+              builders: PdfViewBuilders<DefaultBuilderOptions>(
+                options: const DefaultBuilderOptions(),
+                documentLoaderBuilder: (_) =>
+                    const Center(child: CircularProgressIndicator()),
+                pageLoaderBuilder: (_) =>
+                    const Center(child: CircularProgressIndicator()),
+                errorBuilder: (context, error) => Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      'Could not display this PDF. Check your '
+                      'connection and try again, or download the file.\n\n'
+                      '$error',
+                      textAlign: TextAlign.center,
+                    ),
                   ),
-                )
-              : _isPdf
-                  ? PdfView(
-                      controller: _pdfController!,
-                      builders: PdfViewBuilders<DefaultBuilderOptions>(
-                        options: const DefaultBuilderOptions(),
-                        documentLoaderBuilder: (_) => const Center(
-                          child: CircularProgressIndicator(),
-                        ),
-                        pageLoaderBuilder: (_) => const Center(
-                          child: CircularProgressIndicator(),
-                        ),
-                        errorBuilder: (context, error) => Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(24),
-                            child: Text(
-                              'Could not display this PDF. Check your '
-                              'connection and try again, or download the file.\n\n'
-                              '$error',
-                              textAlign: TextAlign.center,
-                            ),
-                          ),
-                        ),
-                      ),
-                    )
-                  : _isVideo
-                      ? _videoController == null
-                          ? const Center(child: CircularProgressIndicator())
-                          : Center(
-                              child: AspectRatio(
-                                aspectRatio: 16 / 9,
-                                child: Video(controller: _videoController!),
-                              ),
-                            )
-                      : _audioPlayer(),
+                ),
+              ),
+            )
+          : _isVideo
+          ? _videoController == null
+                ? const Center(child: CircularProgressIndicator())
+                : Center(
+                    child: AspectRatio(
+                      aspectRatio: 16 / 9,
+                      child: Video(controller: _videoController!),
+                    ),
+                  )
+          : _audioPlayer(),
     );
   }
 

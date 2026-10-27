@@ -4,16 +4,39 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 enum AuthResult { master, decoy, rejected }
 
 class AuthService {
-  AuthService({FlutterSecureStorage? storage})
-      : _storage = storage ?? const FlutterSecureStorage();
+  AuthService({FlutterSecureStorage? storage, String? userId})
+    : _storage = storage ?? const FlutterSecureStorage(),
+      _masterHashKey = userId == null
+          ? _legacyMasterHashKey
+          : 'secure_vault.$userId.master_bcrypt',
+      _decoyHashKey = userId == null
+          ? _legacyDecoyHashKey
+          : 'secure_vault.$userId.decoy_bcrypt',
+      _scopedToUser = userId != null;
 
-  static const _masterHashKey = 'secure_vault.master_bcrypt';
-  static const _decoyHashKey = 'secure_vault.decoy_bcrypt';
+  static const _legacyMasterHashKey = 'secure_vault.master_bcrypt';
+  static const _legacyDecoyHashKey = 'secure_vault.decoy_bcrypt';
 
   final FlutterSecureStorage _storage;
+  final String _masterHashKey;
+  final String _decoyHashKey;
+  final bool _scopedToUser;
 
-  Future<bool> isConfigured() async =>
-      await _storage.read(key: _masterHashKey) != null;
+  Future<bool> isConfigured() async {
+    if (await _storage.read(key: _masterHashKey) != null) return true;
+    if (!_scopedToUser) return false;
+
+    final legacyHash = await _storage.read(key: _legacyMasterHashKey);
+    if (legacyHash == null) return false;
+    await _storage.write(key: _masterHashKey, value: legacyHash);
+    final legacyDecoyHash = await _storage.read(key: _legacyDecoyHashKey);
+    if (legacyDecoyHash != null) {
+      await _storage.write(key: _decoyHashKey, value: legacyDecoyHash);
+    }
+    await _storage.delete(key: _legacyMasterHashKey);
+    await _storage.delete(key: _legacyDecoyHashKey);
+    return true;
+  }
 
   Future<void> configure(String password, {String? decoyPin}) async {
     await _storage.write(
@@ -27,6 +50,15 @@ class AuthService {
       );
     } else {
       await _storage.delete(key: _decoyHashKey);
+    }
+  }
+
+  Future<void> clearCredentials() async {
+    await _storage.delete(key: _masterHashKey);
+    await _storage.delete(key: _decoyHashKey);
+    if (_scopedToUser) {
+      await _storage.delete(key: _legacyMasterHashKey);
+      await _storage.delete(key: _legacyDecoyHashKey);
     }
   }
 

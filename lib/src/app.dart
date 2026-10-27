@@ -1,21 +1,27 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'auth/cloud_auth_screen.dart';
 import 'auth/auth_screen.dart';
 import 'home/vault_screen.dart';
 import 'services/auth_service.dart';
 import 'services/vault_service.dart';
 
 class SecureVaultApp extends StatefulWidget {
-  const SecureVaultApp({super.key});
+  const SecureVaultApp({required this.supabaseConfigured, super.key});
+
+  final bool supabaseConfigured;
 
   @override
   State<SecureVaultApp> createState() => _SecureVaultAppState();
 }
 
 class _SecureVaultAppState extends State<SecureVaultApp> {
-  final _authService = AuthService();
+  AuthService? _authService;
   final _vaultService = VaultService();
   bool _loading = true;
   bool _isSetup = false;
+  bool _cloudAuthenticated = false;
   bool? _decoyMode;
 
   @override
@@ -25,11 +31,45 @@ class _SecureVaultAppState extends State<SecureVaultApp> {
   }
 
   Future<void> _loadInitialState() async {
-    final configured = await _authService.isConfigured();
+    if (!widget.supabaseConfigured) {
+      if (mounted) setState(() => _loading = false);
+      return;
+    }
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    if (userId == null) {
+      if (mounted) {
+        setState(() {
+          _cloudAuthenticated = false;
+          _loading = false;
+        });
+      }
+      return;
+    }
+    final authService = AuthService(userId: userId);
+    final configured = await authService.isConfigured();
     if (!mounted) return;
     setState(() {
+      _authService = authService;
+      _cloudAuthenticated = true;
       _isSetup = !configured;
       _loading = false;
+    });
+  }
+
+  Future<void> _onCloudAuthenticated() async {
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    if (userId == null) {
+      throw StateError(
+        'Cloud sign-in completed without an authenticated user.',
+      );
+    }
+    final authService = AuthService(userId: userId);
+    final configured = await authService.isConfigured();
+    if (!mounted) return;
+    setState(() {
+      _authService = authService;
+      _cloudAuthenticated = true;
+      _isSetup = !configured;
     });
   }
 
@@ -43,7 +83,13 @@ class _SecureVaultAppState extends State<SecureVaultApp> {
 
   Future<void> _createVault(String password, {String? decoyPin}) async {
     await _vaultService.create(password);
-    await _authService.configure(password, decoyPin: decoyPin);
+    final authService = _authService;
+    if (authService == null) {
+      throw StateError(
+        'Sign in to your cloud account before creating a vault.',
+      );
+    }
+    await authService.configure(password, decoyPin: decoyPin);
     if (!mounted) return;
     setState(() {
       _isSetup = false;
@@ -51,10 +97,37 @@ class _SecureVaultAppState extends State<SecureVaultApp> {
     });
   }
 
+  Future<void> _resetVault() async {
+    final authService = _authService;
+    if (authService == null) {
+      throw StateError(
+        'Sign in to your cloud account before resetting the vault.',
+      );
+    }
+    await _vaultService.reset();
+    await authService.clearCredentials();
+    if (!mounted) return;
+    setState(() {
+      _isSetup = true;
+      _decoyMode = null;
+    });
+  }
+
   Future<void> _lock() async {
     await _vaultService.lock();
     if (!mounted) return;
     setState(() => _decoyMode = null);
+  }
+
+  Future<void> _signOut() async {
+    await _vaultService.lock();
+    await Supabase.instance.client.auth.signOut();
+    if (!mounted) return;
+    setState(() {
+      _authService = null;
+      _cloudAuthenticated = false;
+      _decoyMode = null;
+    });
   }
 
   @override
@@ -71,18 +144,57 @@ class _SecureVaultAppState extends State<SecureVaultApp> {
       ),
       home: _loading
           ? const Scaffold(body: Center(child: CircularProgressIndicator()))
+          : !widget.supabaseConfigured
+          ? const _CloudConfigurationRequired()
+          : !_cloudAuthenticated
+          ? CloudAuthScreen(onAuthenticated: _onCloudAuthenticated)
           : _decoyMode != null
-              ? VaultScreen(
-                  vault: _vaultService,
-                  decoyMode: _decoyMode!,
-                  onLock: _lock,
-                )
-              : AuthScreen(
-                  isSetup: _isSetup,
-                  authService: _authService,
-                  onAuthenticate: _authenticate,
-                  onCreateVault: _createVault,
-                ),
+          ? VaultScreen(
+              vault: _vaultService,
+              decoyMode: _decoyMode!,
+              onLock: _lock,
+              onSignOut: _signOut,
+            )
+          : AuthScreen(
+              isSetup: _isSetup,
+              authService: _authService!,
+              onAuthenticate: _authenticate,
+              onCreateVault: _createVault,
+              onResetVault: _resetVault,
+            ),
     );
   }
+}
+
+class _CloudConfigurationRequired extends StatelessWidget {
+  const _CloudConfigurationRequired();
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    body: Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: const Padding(
+          padding: EdgeInsets.all(28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.cloud_off_outlined, size: 56),
+              SizedBox(height: 16),
+              Text(
+                'Configure your Supabase project',
+                style: TextStyle(fontSize: 22),
+                textAlign: TextAlign.center,
+              ),
+              SizedBox(height: 12),
+              Text(
+                'Add SUPABASE_URL and SUPABASE_ANON_KEY to your local .env file, apply the database migrations with `supabase db push`, then restart the app. Never use a service-role key in the client.',
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
 }

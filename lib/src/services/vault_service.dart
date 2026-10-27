@@ -9,15 +9,16 @@ import 'package:path/path.dart' as p;
 
 import '../models/vault_entry.dart';
 import 'vault_store.dart';
+import 'upload_validation.dart';
 
 class VaultService extends ChangeNotifier {
   VaultService({VaultStore? store}) : _store = store ?? createVaultStore();
 
   static const categories = <String, List<String>>{
-    'Images': ['jpg', 'jpeg', 'png', 'webp'],
+    'Images': ['jpg', 'png'],
     'PDFs': ['pdf'],
-    'Videos': ['mp4', 'mkv'],
-    'Audios': ['mp3', 'wav'],
+    'Videos': ['mp4'],
+    'Audios': ['mp3'],
   };
   static const _formatMagic = [83, 86, 76, 84, 1];
   static const _iterations = 210000;
@@ -31,16 +32,27 @@ class VaultService extends ChangeNotifier {
   bool get isUnlocked => _encryptionKey != null;
 
   Future<void> create(String password) async {
-    final salt = _secureRandomBytes(16);
+    final salt = await _store.readSalt() ?? _secureRandomBytes(16);
     await _store.create(salt);
     await _deriveKeys(password, salt);
-    _entries = [];
+    try {
+      _entries = await _readEntries();
+    } catch (_) {
+      _wipe(_encryptionKey);
+      _wipe(_macKey);
+      _encryptionKey = null;
+      _macKey = null;
+      rethrow;
+    }
+    notifyListeners();
   }
 
   Future<void> unlock(String password) async {
     final salt = await _store.readSalt();
     if (salt == null) {
-      throw StateError('Vault key metadata is missing. The vault cannot be unlocked.');
+      throw StateError(
+        'Vault key metadata is missing. The vault cannot be unlocked.',
+      );
     }
     await _deriveKeys(password, salt);
     try {
@@ -71,16 +83,33 @@ class VaultService extends ChangeNotifier {
     _macKey = Uint8List.fromList(bytes.sublist(32, 64));
   }
 
-  Future<void> importFiles() async {
+  Future<void> importFiles({String? category}) async {
     _requireUnlocked();
+    final extensions = category == null
+        ? categories.values.expand((items) => items).toList()
+        : categories[category];
+    if (extensions == null) {
+      throw ArgumentError.value(category, 'category', 'Unknown vault folder');
+    }
     final pickedFiles = await FilePicker.pickFiles(
       type: FileType.custom,
-      allowedExtensions: categories.values.expand((items) => items).toList(),
+      allowedExtensions: extensions,
     );
 
     for (final picked in pickedFiles) {
+      final size = await picked.length();
+      if (size == null) {
+        throw FormatException(
+          'Could not determine the size of ${picked.name}.',
+        );
+      }
+      validateUploadFile(picked.name, size);
       final bytes = await picked.readAsBytes();
-      final extension = p.extension(picked.name).replaceFirst('.', '').toLowerCase();
+      validateUploadContents(picked.name, bytes);
+      final extension = p
+          .extension(picked.name)
+          .replaceFirst('.', '')
+          .toLowerCase();
       final category = _categoryFor(extension);
       if (category == null) {
         throw FormatException('Unsupported file type: ${picked.name}');
@@ -128,13 +157,35 @@ class VaultService extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> reset() async {
+    await _store.reset();
+    _wipe(_encryptionKey);
+    _wipe(_macKey);
+    _encryptionKey = null;
+    _macKey = null;
+    _entries = [];
+    notifyListeners();
+  }
+
   Future<List<VaultEntry>> _readEntries() async {
     var rows = await _store.readEntries();
+    final legacyRows = await _store.readLegacyEntries();
+    if (legacyRows.isNotEmpty) {
+      for (final row in legacyRows) {
+        final metadata = await _decrypt(row.payload);
+        final decoded = jsonDecode(utf8.decode(metadata));
+        if (decoded is! Map<String, dynamic>) {
+          throw const FormatException('Legacy vault metadata is invalid.');
+        }
+        VaultEntry.fromJson(decoded);
+      }
+      await _store.writeMigratedEntries(legacyRows);
+      await _store.clearLegacyEntries();
+      rows = await _store.readEntries();
+    }
     final legacyIndex = await _store.readLegacyIndex();
     if (rows.isEmpty && legacyIndex != null) {
-      final decoded = jsonDecode(
-        utf8.decode(await _decrypt(legacyIndex)),
-      );
+      final decoded = jsonDecode(utf8.decode(await _decrypt(legacyIndex)));
       if (decoded is! List) {
         throw const FormatException('Legacy vault index is invalid.');
       }
@@ -169,13 +220,19 @@ class VaultService extends ChangeNotifier {
   Future<List<int>> _encrypt(List<int> plaintext) async {
     final keyBytes = _encryptionKey;
     final macBytes = _macKey;
-    if (keyBytes == null || macBytes == null) throw StateError('Vault is locked.');
+    if (keyBytes == null || macBytes == null) {
+      throw StateError('Vault is locked.');
+    }
 
     final ivBytes = _secureRandomBytes(16);
     final encrypted = encrypt.Encrypter(
       encrypt.AES(encrypt.Key(keyBytes), mode: encrypt.AESMode.cbc),
     ).encryptBytes(plaintext, iv: encrypt.IV(ivBytes));
-    final authenticated = <int>[..._formatMagic, ...ivBytes, ...encrypted.bytes];
+    final authenticated = <int>[
+      ..._formatMagic,
+      ...ivBytes,
+      ...encrypted.bytes,
+    ];
     final mac = Hmac.sha256();
     final tag = await mac.calculateMac(
       authenticated,
@@ -188,10 +245,14 @@ class VaultService extends ChangeNotifier {
     final keyBytes = _encryptionKey;
     final macBytes = _macKey;
     const headerLength = 5 + 16 + 32;
-    if (keyBytes == null || macBytes == null) throw StateError('Vault is locked.');
+    if (keyBytes == null || macBytes == null) {
+      throw StateError('Vault is locked.');
+    }
     if (packed.length <= headerLength ||
         !listEquals(packed.sublist(0, _formatMagic.length), _formatMagic)) {
-      throw const FormatException('Encrypted vault data has an unsupported format.');
+      throw const FormatException(
+        'Encrypted vault data has an unsupported format.',
+      );
     }
 
     final ivBytes = packed.sublist(5, 21);
@@ -203,14 +264,17 @@ class VaultService extends ChangeNotifier {
       secretKey: SecretKey(macBytes),
     );
     if (!_constantTimeEquals(storedMac, expected.bytes)) {
-      throw const FormatException('Encrypted vault data failed authentication.');
+      throw const FormatException(
+        'Encrypted vault data failed authentication.',
+      );
     }
-    final clear = encrypt.Encrypter(
-      encrypt.AES(encrypt.Key(keyBytes), mode: encrypt.AESMode.cbc),
-    ).decryptBytes(
-      encrypt.Encrypted(Uint8List.fromList(ciphertext)),
-      iv: encrypt.IV(Uint8List.fromList(ivBytes)),
-    );
+    final clear =
+        encrypt.Encrypter(
+          encrypt.AES(encrypt.Key(keyBytes), mode: encrypt.AESMode.cbc),
+        ).decryptBytes(
+          encrypt.Encrypted(Uint8List.fromList(ciphertext)),
+          iv: encrypt.IV(Uint8List.fromList(ivBytes)),
+        );
     return Uint8List.fromList(clear);
   }
 
@@ -234,9 +298,9 @@ class VaultService extends ChangeNotifier {
     if (!isUnlocked) throw StateError('Vault is locked.');
   }
 
-  String _newId() => _secureRandomBytes(16)
-      .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
-      .join();
+  String _newId() => _secureRandomBytes(
+    16,
+  ).map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
 
   Uint8List _secureRandomBytes(int count) {
     final random = Random.secure();

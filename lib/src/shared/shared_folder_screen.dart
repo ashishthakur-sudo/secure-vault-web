@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../models/vault_entry.dart';
 import '../viewer/docx_text_extractor.dart';
 import '../viewer/preview_screen.dart';
+import '../services/upload_validation.dart';
 import 'shared_file_download.dart';
 import 'shared_folder_service.dart';
 
@@ -108,11 +109,21 @@ class _SharedFolderScreenState extends State<SharedFolderScreen> {
   Future<void> _upload() async {
     final files = await FilePicker.pickFiles(
       dialogTitle: 'Add files, images, or videos to Shared',
+      type: FileType.custom,
+      allowedExtensions: allowedUploadExtensions.toList(),
     );
     if (files.isEmpty) return;
     await _run(() async {
       for (final file in files) {
+        final size = await file.length();
+        if (size == null) {
+          throw FormatException(
+            'Could not determine the size of ${file.name}.',
+          );
+        }
+        validateUploadFile(file.name, size);
         final bytes = await file.readAsBytes();
+        validateUploadFile(file.name, bytes.length);
         await _service.uploadFile(_pinController.text, file.name, bytes);
         final uploadedFiles = await _service.listFiles(_pinController.text);
         if (mounted) setState(() => _files = uploadedFiles);
@@ -549,7 +560,7 @@ class _SharedFolderScreenState extends State<SharedFolderScreen> {
               const Icon(Icons.folder_shared_outlined, size: 48),
               const SizedBox(height: 12),
               const Text(
-                'Add files, images, or videos to share them. Each upload can be up to 4 MB.',
+                'Add PDF, PNG, JPG, MP4, or MP3 files to share them. Each upload can be up to 20 MB.',
                 textAlign: TextAlign.center,
               ),
               if (_error != null) ...[

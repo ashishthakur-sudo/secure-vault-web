@@ -14,6 +14,7 @@ void main() {
           authService: AuthService(),
           onAuthenticate: (password, result) async {},
           onCreateVault: (password, {String? decoyPin}) async {},
+          onResetVault: () async {},
         ),
       ),
     );

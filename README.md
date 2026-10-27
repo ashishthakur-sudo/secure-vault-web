@@ -1,6 +1,6 @@
 # Secure Vault
 
-Flutter app for storing supported local files as authenticated, encrypted blobs. Native targets are Android, Windows, and macOS; the web target stores the vault locally in the browser.
+Flutter app for storing supported files as authenticated, encrypted blobs. Encrypted file contents remain on the device; encrypted metadata is synchronized through Supabase PostgreSQL. Native targets are Android, Windows, and macOS; the web target stores encrypted file contents in that browser's IndexedDB.
 
 ## Web app
 
@@ -14,13 +14,15 @@ dart run pdfx:install_web
 flutter build web --release
 ```
 
-To test it locally, run `flutter run -d chrome` or serve the `build\web` folder over HTTPS or `localhost`. The browser version uses browser-native IndexedDB and secure browser storage; encrypted files stay in that browser profile and origin. It has no server-side database or account sync, and its data is separate from the Windows/Android vaults and other browsers/devices. Clearing browser data can permanently erase the local vault. Browser media playback depends on supported codecs.
+Copy `.env.example` to `.env` and configure `SUPABASE_URL` and `SUPABASE_ANON_KEY` before building or running. Apply the Supabase migrations with `supabase db push`. Run locally with `flutter run -d chrome` or serve the `build\web` folder over HTTPS or `localhost`. Create or sign in with an email and password, then unlock the vault with its master password. Supabase email confirmation must be disabled for signup to immediately create a session; no SMS or WhatsApp provider is required. The browser stores encrypted file contents in IndexedDB; metadata is synchronized under the signed-in user's PostgreSQL account. Files themselves are not transferred, so another device can show metadata but cannot open a file that was not imported on that device. Clearing browser data can permanently erase that device's encrypted files. Browser media playback depends on supported codecs.
 
 Serve the app only over HTTPS or localhost: secure browser storage requires a secure context. A static host can serve the frontend, but does not receive or store vault files.
 
 ## Shared folder (cloud)
 
 The **Shared** folder button in the vault opens a cloud folder that different users can access with the same four-digit password. Unlike the private local vault, shared files are uploaded to a Supabase Storage bucket so other users can list and download them. Cloud files are not end-to-end encrypted; the project owner/Supabase administrators can access them. Do not use it for sensitive files. A four-digit password is weak; the Edge Function limits incorrect attempts to five per IP per 15-minute window, but this is not equivalent to strong account authentication.
+
+For local development, copy `.env.example` to `.env` and fill in `SUPABASE_URL` and `SUPABASE_ANON_KEY`. `.env` is ignored by Git and loaded by `flutter_dotenv`; do not commit it. Values bundled in a Flutter app are still extractable by users: the Supabase URL and anon/publishable key are public client configuration, not secrets. Never put a service-role key, admin reset key, or other privileged secret in `.env` or Dart code. Keep privileged keys in Supabase Edge Function secrets. The Shared configuration screen can also store a project URL and public key in platform secure storage.
 
 To enable Shared, create a Supabase project, install the Supabase CLI, then from this repository run:
 
@@ -34,7 +36,15 @@ supabase functions deploy shared-vault --no-verify-jwt
 
 Set `SHARED_FOLDER_ADMIN_KEY` to a long, random secret and keep it private; it authorizes changing the shared-folder password. No initial `SHARED_FOLDER_PIN` secret is required: after deployment, use **Admin sign in** in the app with this key and set the initial four-digit password. The reset control is then available to admins for future changes. The key is kept only in memory for that app session. Passwords set in the app are stored as salted hashes in the database. A legacy `SHARED_FOLDER_PIN` secret, if configured, is used only until an admin sets a password in the app.
 
-Supabase supplies the project URL and service-role secret to the Edge Function; never put a service-role key in this app or publish it. The currently published app is preconfigured with its Supabase project URL and public publishable key; users can inspect or change them under **Shared → Configure cloud sharing**. The public key is intended for client use; the service-role secret is not. In **Shared**, select files (including images and videos) with **Add files**; each file can be up to 4 MB. Every shared file has a **View** option: images, PDFs, videos, audio, text, and DOCX files preview in the app without saving to Downloads. DOCX previews extract readable text and may not preserve Word formatting or embedded images; unsupported formats show a message explaining that they must be downloaded to open. Use **Download** when you want a local copy. Move files to **Trash** to remove them from the shared list; open Trash and choose **Restore** to bring them back. Trash is shared and recoverable by anyone with the folder password; files are not permanently deleted. Native app downloads are saved under `Documents\SecureVaultShared`; browser downloads use the browser's download location.
+The vault unlock screen also offers **Forgot password or PIN?**. It sends a one-time code to the signed-in account's email and requires the code to be verified for that same account before resetting. A confirmed reset permanently deletes that account's encrypted metadata, KDF salt, and associated local encrypted files, then lets the user create an empty vault. It cannot recover files encrypted with the forgotten password. This is separate from the Shared-folder admin PIN reset.
+
+Supabase supplies the project URL and service-role secret to the Edge Function; never put a service-role key in this app or publish it. The public key is intended for client use; the service-role secret is not. In **Shared**, uploads are restricted to PDF, PNG, JPG, MP4, and MP3 files up to 20 MiB each. The app and Edge Function validate the extension, file signature, and size; the Storage bucket also limits file size and MIME types. The `secure_shared_uploads` migration keeps the shared bucket private, enables/reasserts RLS, and blocks direct table and bucket access for `anon` and `authenticated`; the app accesses files only through the PIN-checked Edge Function, which uses the server-side service role. That shared PIN authorizes access to the entire shared folder; it is not per-user ownership or account-level authorization. Every shared file has a **View** option: images, PDFs, videos, audio, text, and DOCX files preview in the app without saving to Downloads. DOCX previews extract readable text and may not preserve Word formatting or embedded images; unsupported formats show a message explaining that they must be downloaded to open. Use **Download** when you want a local copy. Move files to **Trash** to remove them from the shared list; open Trash and choose **Restore** to bring them back. Trash is shared and recoverable by anyone with the folder password; files are not permanently deleted. Native app downloads are saved under `Documents\SecureVaultShared`; browser downloads use the browser's download location.
+
+## PostgreSQL vault metadata
+
+The local SQLite/IndexedDB metadata store has been replaced by Supabase PostgreSQL tables accessed through Supabase Auth and Row Level Security. On first unlock after signing in, existing SQLite or IndexedDB metadata is migrated to the signed-in account; encrypted files remain at their existing local paths. Do not delete the local vault folder or browser data until the migration has completed and verified. The metadata remains encrypted with the vault master password before it is sent to PostgreSQL. A first-time device must use the same master password to decrypt an existing account's metadata.
+
+The current project URL and publishable key are in the ignored local `.env`. To build or deploy from a clean checkout, copy `.env.example` to `.env`, supply the project URL and public anon/publishable key, then run `flutter pub get`, `supabase link --project-ref YOUR_PROJECT_REF`, and `supabase db push`. In Supabase **Authentication → Sign In / Providers**, leave Email enabled and turn off **Confirm email** to allow password signup without a verification email. Phone authentication is not used and no SMS/WhatsApp credentials are required. In Supabase **Authentication → URL Configuration**, the deployed app URL is `https://ashishthakur-sudo.github.io/secure-vault-web/`. Keep service-role keys and database passwords out of Flutter and `.env`. Every shared file has a **View** option: images, PDFs, videos, audio, text, and DOCX files preview in the app without saving to Downloads. DOCX previews extract readable text and may not preserve Word formatting or embedded images; unsupported formats show a message explaining that they must be downloaded to open. Use **Download** when you want a local copy. Move files to **Trash** to remove them from the shared list; open Trash and choose **Restore** to bring them back. Trash is shared and recoverable by anyone with the folder password; files are not permanently deleted. Native app downloads are saved under `Documents\SecureVaultShared`; browser downloads use the browser's download location.
 
 If **Open Shared** reports **“Failed to fetch”**, the browser could not reach the Edge Function; the PIN has not yet been checked. Check that the function is deployed to the same project configured in the app, the database migration has been applied, and `SHARED_FOLDER_ADMIN_KEY` has been set. Never share or enter the service-role key in the app.
 
@@ -73,7 +83,7 @@ The Android APK does not run on Windows. Build the Windows desktop app instead:
 
 6. Launch `build\windows\x64\runner\Release\secure_vault.exe`. Keep the entire `Release` folder together: the executable needs the neighboring DLLs and `data` folder. To move the app to another Windows laptop, copy or zip the whole folder, not just the `.exe`.
 
-On first launch, create a master password. Your encrypted vault is stored in your Windows Documents directory under `.SecureVault`; unlock it with that password on later launches. Use the eye button in the password field to reveal or hide your password before unlocking.
+On first launch, create or sign in to a Supabase email/password account, then create a master password for the encrypted vault. Email confirmation is disabled for signup; vault resets still require a one-time email code. Encrypted files are stored in your Windows Documents directory under `.SecureVault`; unlock the vault with the master password on later launches. Use **Sign out** to switch cloud accounts. Use the eye button in the password field to reveal or hide your password before unlocking.
 
 To open the app from a browser address bar on this Windows account, register the local URL protocol once:
 
@@ -95,15 +105,18 @@ Rebuild with `flutter build apk --release` for Android and `flutter build window
 
 ## Security behavior
 
-- A first-run master password is bcrypt-hashed and stored with `flutter_secure_storage`. The vault encryption key is separately derived from the password and a random per-install salt using PBKDF2-HMAC-SHA256.
-- Files and vault metadata are encrypted using AES-256-CBC with encrypt-then-MAC HMAC-SHA256. A local SQLite database (`.vault-metadata.db`) stores only random file IDs and encrypted metadata; original filenames are not stored in plaintext. Existing encrypted JSON indexes are migrated to SQLite on the next successful unlock.
+- A first-run master password is bcrypt-hashed and stored with `flutter_secure_storage`. The vault encryption key is separately derived from the password and a per-account random salt using PBKDF2-HMAC-SHA256.
+- On Android and Apple platforms, `flutter_secure_storage` uses platform-backed secure storage (Android Keystore and Keychain). Raw master passwords are not persisted; only the bcrypt hash is stored. Flutter web does not have the same hardware-backed security guarantees.
+- The Supabase auth session is persisted through `flutter_secure_storage` instead of plain shared preferences on native platforms.
+- Files and vault metadata are encrypted using AES-256-CBC with encrypt-then-MAC HMAC-SHA256. Supabase PostgreSQL stores only the per-user random KDF salt and encrypted metadata; the metadata table is protected by RLS policies tied to `auth.uid()`. Encrypted file blobs remain in local device storage. Existing SQLite or IndexedDB metadata is copied to PostgreSQL on first successful unlock and removed from the legacy metadata store only after the server confirms the copy.
 - Images render from `Image.memory`; PDFs use `PdfDocument.openData`. Audio/video are decrypted into a Dart memory buffer and streamed by a short-lived HTTP server bound only to `127.0.0.1`; no decrypted media file is written to storage.
+- The Music screen organizes encrypted MP3s into a playlist with playback, seek, shuffle, next/previous, and download controls. Downloads create a normal unencrypted file in the browser's download location or the native app's `Documents\SecureVaultShared` folder.
 - The optional decoy PIN opens a read-only empty view. It does not store a second vault.
 - Imported inputs are read into memory before encryption. The app cannot erase or protect the original source file.
 
 This protects vault contents at rest while the device is locked. It does not protect against a compromised/unlocked operating system, screenshots, memory inspection, backups of source files, or a weak password. Dart cannot guarantee immediate zeroization of every copy of a key or plaintext buffer.
 
-SQLite is local storage, not a remote/shared database. The database is created automatically inside `.SecureVault` on first use; back up the entire vault folder while the app is locked, and keep the master password because the encrypted files and metadata cannot be recovered without it.
+Encrypted file blobs are local, while metadata is account-scoped PostgreSQL data. Back up the entire local `.SecureVault` folder (or keep browser data intact) and keep the master password; the cloud metadata alone cannot restore encrypted file contents.
 
 ## Generate platform scaffolding
 

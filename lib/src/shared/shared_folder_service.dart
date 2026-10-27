@@ -1,8 +1,11 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
+
+import '../services/upload_validation.dart';
 
 class SharedFile {
   const SharedFile({
@@ -61,42 +64,19 @@ class SharedFolderService {
 
   static const _urlKey = 'secure_vault.shared.supabase_url';
   static const _anonKey = 'secure_vault.shared.supabase_anon_key';
-  static const _configurationVersionKey =
-      'secure_vault.shared.configuration_version';
-  static const _configurationVersion = '1';
-  static const defaultProjectUrl = 'https://uxepshadypusifhvvwsf.supabase.co';
-  static const defaultPublishableKey =
-      'sb_publishable_JWNuaBqV-K2gq191GHDj1g_p_BMU3QI';
-
   final FlutterSecureStorage _storage;
   final http.Client _client;
 
-  Future<String?> get projectUrl => _storage.read(key: _urlKey);
-  Future<String?> get publishableKey => _storage.read(key: _anonKey);
-
-  Future<void> configureDefaults() async {
-    if (await _storage.read(key: _configurationVersionKey) !=
-        _configurationVersion) {
-      await _storage.write(key: _urlKey, value: defaultProjectUrl);
-      await _storage.write(key: _anonKey, value: defaultPublishableKey);
-      await _storage.write(
-        key: _configurationVersionKey,
-        value: _configurationVersion,
-      );
-      return;
-    }
-    if (await _storage.read(key: _urlKey) == null) {
-      await _storage.write(key: _urlKey, value: defaultProjectUrl);
-    }
-    if (await _storage.read(key: _anonKey) == null) {
-      await _storage.write(key: _anonKey, value: defaultPublishableKey);
-    }
-  }
+  Future<String?> get projectUrl async =>
+      await _storage.read(key: _urlKey) ?? _environmentValue('SUPABASE_URL');
+  Future<String?> get publishableKey async =>
+      await _storage.read(key: _anonKey) ??
+      _environmentValue('SUPABASE_ANON_KEY');
 
   Future<bool> get isConfigured async {
-    await configureDefaults();
-    return await _storage.read(key: _urlKey) != null &&
-        await _storage.read(key: _anonKey) != null;
+    final url = await projectUrl;
+    final key = await publishableKey;
+    return url != null && key != null;
   }
 
   Future<void> configure(String projectUrl, String anonKey) async {
@@ -147,9 +127,7 @@ class SharedFolderService {
   }
 
   Future<void> uploadFile(String pin, String name, Uint8List bytes) async {
-    if (bytes.length > 4 * 1024 * 1024) {
-      throw const FormatException('Shared uploads are limited to 4 MB.');
-    }
+    validateUploadContents(name, bytes);
     await _request({
       'action': 'upload',
       'pin': pin,
@@ -189,8 +167,8 @@ class SharedFolderService {
   }
 
   Future<Map<String, dynamic>> _request(Map<String, Object> body) async {
-    final projectUrl = await _storage.read(key: _urlKey);
-    final anonKey = await _storage.read(key: _anonKey);
+    final projectUrl = await this.projectUrl;
+    final anonKey = await publishableKey;
     if (projectUrl == null || anonKey == null) {
       throw StateError(
         'Shared folder is not configured with a Supabase project.',
@@ -250,4 +228,9 @@ class SharedFolderService {
   }
 
   void dispose() => _client.close();
+
+  String? _environmentValue(String name) {
+    final value = dotenv.env[name]?.trim();
+    return value == null || value.isEmpty ? null : value;
+  }
 }
